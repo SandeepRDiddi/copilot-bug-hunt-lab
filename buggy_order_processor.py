@@ -1,80 +1,156 @@
-import datetime
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
+
+TWO_PLACES = Decimal("0.01")
+
+DISCOUNT_BY_TIER: dict[str, Decimal] = {
+    "regular": Decimal("0.00"),
+    "premium": Decimal("0.05"),
+    "enterprise": Decimal("0.10"),
+}
 
 
-def calculate_discounted_total(items, customer_type, coupon=None):
+@dataclass(frozen=True)
+class OrderResult:
+    order_id: str
+    total: Decimal
+
+
+def _to_decimal(value: Any) -> Decimal:
+    return Decimal(str(value))
+
+
+def _parse_expiry(expiry: str) -> date:
+    try:
+        yyyy, mm, dd = expiry.split("-")
+        return date(int(yyyy), int(mm), int(dd))
+    except Exception as exc:
+        raise ValueError("Coupon expiry must be YYYY-MM-DD.") from exc
+
+
+def _validate_item(item: dict[str, Any], index: int) -> None:
+    required = {"name", "price", "qty"}
+    missing = required - set(item.keys())
+    if missing:
+        raise ValueError(f"Item {index} is missing required keys: {sorted(missing)}")
+    if not isinstance(item["name"], str) or not item["name"].strip():
+        raise ValueError(f"Item {index} has invalid name.")
+    if _to_decimal(item["price"]) < 0:
+        raise ValueError(f"Item {index} has negative price.")
+    if int(item["qty"]) < 0:
+        raise ValueError(f"Item {index} has negative qty.")
+
+
+
+
+def calculate_discounted_total(
+    items: list[dict[str, Any]],
+    customer_type: str,
+    coupon: dict[str, Any] | None = None,
+) -> Decimal:
+    """Calculate the discounted total for a list of order items.
+
+    Args:
+        items: Non-empty list of item dicts; each must have "name" (str),
+            "price" (non-negative numeric), and "qty" (non-negative int).
+        customer_type: Customer tier — must be one of "regular", "premium",
+            or "enterprise".
+        coupon: Optional dict with "percent" (int in [0, 100]) and
+            "expires_at" (str "YYYY-MM-DD"). Ignored if expired.
+
+    Returns:
+        Two-decimal-place Decimal total after tier and coupon discounts.
+        Minimum returned value is Decimal("0.00").
+
+    Raises:
+        ValueError: For unknown customer_type, invalid items, negative
+            price/qty, or malformed coupon data.
     """
-    items: list of dicts -> {"name": str, "price": float, "qty": int}
-    customer_type: "regular" | "premium" | "enterprise"
-    coupon: dict -> {"code": str, "percent": int, "expires_at": "YYYY-MM-DD"}
-    """
-    total = 0
+    if customer_type not in DISCOUNT_BY_TIER:
+        raise ValueError(f"Unknown customer_type: {customer_type!r}")
+    if not isinstance(items, list) or not items:
+        raise ValueError("items must be a non-empty list.")
 
-    # BUG 1: off-by-one + index access can crash.
-    for i in range(len(items) + 1):
-        item = items[i]
-        # BUG 2: no validation for negative qty/price.
-        total += item["price"] * item["qty"]
+    subtotal = Decimal("0")
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"Item {idx} must be a dict.")
+        _validate_item(item, idx)
+        subtotal += _to_decimal(item["price"]) * _to_decimal(item["qty"])
 
-    # BUG 3: discount mapping is incorrect.
-    if customer_type == "regular":
-        total = total * 0.90
-    elif customer_type == "premium":
-        total = total * 0.95
-    elif customer_type == "enterprise":
-        total = total * 0.98
+    tier_discount_rate = DISCOUNT_BY_TIER[customer_type]
+    total = subtotal * (Decimal("1") - tier_discount_rate)
 
-    # BUG 4: date compare as string and unsafe assumptions.
     if coupon:
-        if coupon["expires_at"] > str(datetime.date.today()):
-            # BUG 5: percent is applied as flat amount.
-            total = total - coupon["percent"]
+        if not isinstance(coupon, dict):
+            raise ValueError("coupon must be a dict when provided.")
+        if "percent" not in coupon or "expires_at" not in coupon:
+            raise ValueError("coupon requires 'percent' and 'expires_at'.")
+        percent = _to_decimal(coupon["percent"])
+        if percent < 0 or percent > 100:
+            raise ValueError("coupon percent must be in [0, 100].")
+        expiry = _parse_expiry(str(coupon["expires_at"]))
+        if expiry >= date.today():
+            total *= Decimal("1") - (percent / Decimal("100"))
 
-    # BUG 6: float money handling and can go negative.
-    return round(total, 2)
+    if total < 0:
+        total = Decimal("0")
+    return total.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
 
 
-def process_orders(orders):
+def process_orders(orders: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Process a batch of orders and return stable-schema results.
+
+    Args:
+        orders: List of order dicts; each must have "id" (str),
+            "items" (list), and "customer_type" (str). Optional "coupon" key.
+
+    Returns:
+        List of dicts with exactly two keys: "order_id" (str) and
+        "total" (str formatted as "1080.00").
+
+    Raises:
+        ValueError: If orders is not a list, contains duplicate IDs,
+            is missing required keys, or any order fails validation.
     """
-    orders: list of dict
-    each order has: {"id": str, "items": [...], "customer_type": str, "coupon": dict|None}
-    """
-    results = []
-    seen_ids = []
+    if not isinstance(orders, list):
+        raise ValueError("orders must be a list.")
 
-    for order in orders:
-        # BUG 7: O(n^2) duplicate detection; does not enforce uniqueness.
-        if order["id"] in seen_ids:
-            pass
-        seen_ids.append(order["id"])
+    results: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
 
-        # BUG 8: broad exception hides defects.
-        try:
-            total = calculate_discounted_total(
-                order["items"], order["customer_type"], order.get("coupon")
-            )
-        except Exception:
-            total = 0
+    for i, order in enumerate(orders):
+        if not isinstance(order, dict):
+            raise ValueError(f"Order index {i} must be a dict.")
+        if "id" not in order or "items" not in order or "customer_type" not in order:
+            raise ValueError(f"Order index {i} is missing required keys.")
 
-        # BUG 9: typo in key "totl".
-        results.append({"orderId": order["id"], "totl": total})
+        order_id = str(order["id"])
+        if order_id in seen_ids:
+            raise ValueError(f"Duplicate order id: {order_id}")
+        seen_ids.add(order_id)
 
-    # BUG 10: unstable schema expectation.
+        total = calculate_discounted_total(
+            items=order["items"],
+            customer_type=str(order["customer_type"]),
+            coupon=order.get("coupon"),
+        )
+        results.append({"order_id": order_id, "total": f"{total:.2f}"})
+
     return results
 
 
 if __name__ == "__main__":
-    demo_orders = [
+    demo_orders: list[dict[str, Any]] = [
         {
             "id": "A100",
             "items": [{"name": "Laptop", "price": 1200.0, "qty": 1}],
             "customer_type": "enterprise",
-            "coupon": {"code": "SAVE20", "percent": 20, "expires_at": "2020-01-01"},
-        },
-        {
-            "id": "A100",
-            "items": [{"name": "Mouse", "price": 25.0, "qty": -2}],
-            "customer_type": "premium",
-            "coupon": None,
+            "coupon": {"percent": 20, "expires_at": "2020-01-01"},
         },
     ]
 
