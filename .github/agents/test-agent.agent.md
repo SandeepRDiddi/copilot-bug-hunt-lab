@@ -351,3 +351,18 @@ If no residual risks: `No residual risks identified. Code is ready for deploymen
 - **DO NOT** invoke the Deployment Agent — the report is the output; human decides next.
 - If a quality gate fails, report it accurately. Do not hide failures.
 - If you add tests, they must pass before the report is written.
+
+---
+
+## Audit Logging
+
+After writing `test-report.md`, append the following to `pipeline-audit-log.md`:
+
+- One row per test layer completed:
+  - Agent: Test · Stage: TEST · Action: COMPLETED · Notes: "Layer N — <tool>: <result>"
+- One summary row:
+  - Agent: Test · Stage: TEST · Action: COMPLETED · Artifact: test-report.md · Notes: "<N> tests passed; ruff clean; mypy clean; verdict: PASS/FAIL"
+
+When the user types `APPROVE` after reviewing the test report:
+1. Append to `pipeline-audit-log.md` Approval Register and Event Log:
+   - Agent: Test · Stage: APPROVE · Action: APPROVED · Approver: (username) · Approval UTC: (current UTC) · Notes: "Test gate passed; Deployment Agent unblocked"

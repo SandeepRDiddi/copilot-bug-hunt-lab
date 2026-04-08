@@ -249,3 +249,25 @@ After deployment, the following audit trail documents the full pipeline:
 - **DO NOT** stage unrelated files.
 - **DO NOT** include secrets, credentials, or `.venv/` contents in any commit.
 - If CI fails after the PR is opened, report it to the user and do not merge.
+
+---
+
+## Audit Logging
+
+Append the following entries to `pipeline-audit-log.md` at each deployment milestone:
+
+| Event | Action | Notes |
+|-------|--------|-------|
+| Pre-commit quality gate passed | COMPLETED | "ruff clean · mypy clean · N tests passed" |
+| Branch created | COMPLETED | Branch name |
+| `git commit` executed | COMPLETED | Commit SHA and file count |
+| `git push` executed | COMPLETED | Remote branch URL |
+| PR opened | COMPLETED | PR URL and number |
+
+Final entry:
+- Agent: Deployment · Stage: DEPLOY · Action: COMPLETED · Artifact: PR URL · Notes: "RUN-NNN complete; update Run Registry Final Status to ✅ COMPLETE"
+
+Also update the **Run Registry** in `pipeline-audit-log.md`:
+- Set `Final Status` to `✅ COMPLETE`
+- Set `Completed (UTC)` to current UTC timestamp
+- Set `PR` column to the opened PR URL/number

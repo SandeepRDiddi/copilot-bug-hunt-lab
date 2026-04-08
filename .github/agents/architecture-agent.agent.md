@@ -116,10 +116,24 @@ Within each tier, order by business impact (highest impact first).
 Write the complete report to `architecture-findings.md` in the repository root.
 Use the exact template defined in the Output Format section.
 
+### Step 4b — Log to Audit Agent
+Append the following two entries to `pipeline-audit-log.md` (create the file if absent — use the Audit Agent's initialization template):
+
+- **Row: COMPLETED** — Agent: Architecture · Stage: REVIEW · Action: COMPLETED · Artifact: architecture-findings.md · Triggered By: (username who invoked) · Notes: "<N> findings: <C> Critical · <H> High · <M> Medium · <L> Low"
+- **Row: HALTED_FOR_APPROVAL** — Agent: Architecture · Stage: REVIEW · Action: HALTED_FOR_APPROVAL · Artifact: architecture-findings.md · Status: ⏸️ HALTED · Notes: "Awaiting human APPROVE before Planning Agent proceeds"
+
+Also update the Run Registry: if no open run exists for today, add a new RUN-NNN row with status 🔄 IN PROGRESS.
+
 ### Step 5 — HALT and request approval
 After writing the file, display the findings summary to the user.
 Print the approval prompt and **stop**. Do not proceed, do not suggest fixes,
 do not invoke any other agent. Wait for explicit human input.
+
+### Step 6 — On receiving APPROVE
+When the user types `APPROVE`:
+1. Update `architecture-findings.md` status to `✅ APPROVED — <date>`
+2. Append to `pipeline-audit-log.md` Approval Register and Event Log:
+   - Agent: Architecture · Stage: APPROVE · Action: APPROVED · Approver: (username) · Approval UTC: (current UTC) · Notes: "Architecture review gate passed; Planning Agent unblocked"
 
 ---
 
