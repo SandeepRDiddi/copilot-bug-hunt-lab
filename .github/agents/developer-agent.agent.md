@@ -179,6 +179,13 @@ pytest -q
 ```
 Report the exact output.
 
+### Step 3b — Log completed tasks to Audit Agent
+For each task T-XX completed, append a row to `pipeline-audit-log.md` Event Log:
+- Agent: Developer · Stage: IMPLEMENT · Action: COMPLETED · Artifact: buggy_order_processor.py · Notes: "T-XX: <short description>; <findings resolved>"
+
+Then append:
+- **Row: HALTED_FOR_APPROVAL** — Agent: Developer · Stage: IMPLEMENT · Action: HALTED_FOR_APPROVAL · Status: ⏸️ HALTED · Notes: "All N tasks complete; ruff clean · mypy clean · N tests passed"
+
 ### Step 4 — Produce diff summary
 Show a concise diff or change summary covering what changed in each file.
 Format as a table:
@@ -204,6 +211,11 @@ Review the changes above, then reply:
 ```
 
 Stop. Do not invoke the Test Agent. Wait for the user.
+
+### On receiving APPROVE
+When the user types `APPROVE`:
+1. Append to `pipeline-audit-log.md` Approval Register and Event Log:
+   - Agent: Developer · Stage: APPROVE · Action: APPROVED · Approver: (username) · Approval UTC: (current UTC) · Notes: "Implementation gate passed; Test Agent unblocked"
 
 ---
 

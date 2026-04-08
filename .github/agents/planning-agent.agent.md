@@ -79,9 +79,20 @@ For every fix task, write explicit, testable acceptance criteria in BDD style:
 Write the full plan to `planning-fix.md` in the repository root.
 Use the exact template defined in the Output Format section.
 
+### Phase 5b — Log to Audit Agent
+Append to `pipeline-audit-log.md`:
+- **Row: COMPLETED** — Agent: Planning · Stage: PLAN · Action: COMPLETED · Artifact: planning-fix.md · Notes: "<N> tasks planned; <M> findings addressed"
+- **Row: HALTED_FOR_APPROVAL** — Agent: Planning · Stage: PLAN · Action: HALTED_FOR_APPROVAL · Artifact: planning-fix.md · Status: ⏸️ HALTED · Notes: "Awaiting human APPROVE before Developer Agent proceeds"
+
 ### Phase 6 — HALT and request approval
 Display the plan summary and wait for explicit human APPROVE before the
 Developer Agent may start.
+
+### Phase 7 — On receiving APPROVE
+When the user types `APPROVE`:
+1. Update `planning-fix.md` status to `✅ APPROVED — <date>`
+2. Append to `pipeline-audit-log.md` Approval Register and Event Log:
+   - Agent: Planning · Stage: APPROVE · Action: APPROVED · Approver: (username) · Approval UTC: (current UTC) · Notes: "Fix plan gate passed; Developer Agent unblocked"
 
 ---
 
