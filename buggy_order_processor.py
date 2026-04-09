@@ -45,8 +45,6 @@ def _validate_item(item: dict[str, Any], index: int) -> None:
         raise ValueError(f"Item {index} has negative qty.")
 
 
-
-
 def calculate_discounted_total(
     items: list[dict[str, Any]],
     customer_type: str,
@@ -94,7 +92,7 @@ def calculate_discounted_total(
         if percent < 0 or percent > 100:
             raise ValueError("coupon percent must be in [0, 100].")
         expiry = _parse_expiry(str(coupon["expires_at"]))
-        if expiry >= date.today():
+        if expiry > date.today():
             total *= Decimal("1") - (percent / Decimal("100"))
 
     if total < 0:
@@ -102,7 +100,7 @@ def calculate_discounted_total(
     return total.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
 
 
-def process_orders(orders: list[dict[str, Any]]) -> list[dict[str, str]]:
+def process_orders(orders: list[dict[str, Any]]) -> list[OrderResult]:
     """Process a batch of orders and return stable-schema results.
 
     Args:
@@ -110,8 +108,8 @@ def process_orders(orders: list[dict[str, Any]]) -> list[dict[str, str]]:
             "items" (list), and "customer_type" (str). Optional "coupon" key.
 
     Returns:
-        List of dicts with exactly two keys: "order_id" (str) and
-        "total" (str formatted as "1080.00").
+        List of OrderResult objects with exactly two fields: order_id (str)
+        and total (Decimal with 2 decimal places).
 
     Raises:
         ValueError: If orders is not a list, contains duplicate IDs,
@@ -120,7 +118,7 @@ def process_orders(orders: list[dict[str, Any]]) -> list[dict[str, str]]:
     if not isinstance(orders, list):
         raise ValueError("orders must be a list.")
 
-    results: list[dict[str, str]] = []
+    results: list[OrderResult] = []
     seen_ids: set[str] = set()
 
     for i, order in enumerate(orders):
@@ -139,7 +137,7 @@ def process_orders(orders: list[dict[str, Any]]) -> list[dict[str, str]]:
             customer_type=str(order["customer_type"]),
             coupon=order.get("coupon"),
         )
-        results.append({"order_id": order_id, "total": f"{total:.2f}"})
+        results.append(OrderResult(order_id=order_id, total=total))
 
     return results
 
