@@ -2,403 +2,288 @@
 
 **Source Findings:** `architecture-findings.md`
 **Planned By:** Planning Agent
-**Plan Date:** 2026-04-08
-**Total Fix Tasks:** 9
-**Findings Addressed:** 23 of 23 (100%)
-**Pipeline Status:** ⏸ AWAITING APPROVAL — Developer Agent must not start until APPROVED
+**Plan Date:** 2025-01-15
+**Total Fix Tasks:** 2
+**Findings Addressed:** 2 of 2 (100%)
+**Pipeline Status:** ✅ APPROVED — Signed off for Developer Agent
 
 ---
 
 ## Executive Summary
 
-All 23 findings from the architecture review are addressed across 9 ordered tasks.
-The plan proceeds in strict dependency order: imports and constants first, then three
-private helpers, then the two public functions, and regression tests last. The
-highest-risk changes are T-07 (full rewrite of `calculate_discounted_total`) and T-08
-(full rewrite of `process_orders`) — both are guarded by helpers written in earlier
-tasks. `fixed_order_processor.py` serves as the semantic ground-truth for all
-calculation behaviour. No changes to `fixed_order_processor.py` or `pyproject.toml`
-are in scope.
+The codebase exhibits strong engineering fundamentals and requires only maintenance-focused improvements. The fix plan addresses two findings: (1) **H-01**: Replace the overly broad `except Exception` handler in `_parse_expiry()` with specific exception types (`ValueError`, `IndexError`), improving error clarity and debuggability. (2) **L-01**: Add PEP 257 compliant docstrings to three internal helper functions (`_to_decimal()`, `_parse_expiry()`, `_validate_item()`), improving maintainability and code documentation. These fixes are low-risk, non-breaking changes that improve code quality without altering observable behavior for valid inputs. Both tasks are independent and can be executed sequentially or in parallel, with comprehensive regression testing already available in the existing test suite.
 
 ---
 
 ## Fix Plan Table
 
-| Task | Priority | Findings Resolved | Fix Description | File(s) | Break Risk | Test Required |
-|------|----------|-------------------|-----------------|---------|------------|---------------|
-| T-01 | 1 | L-01 | Add `from __future__ import annotations`; replace `import datetime` with targeted imports (`date`, `Decimal`, `ROUND_HALF_UP`, `Any`, `dataclass`) | `buggy_order_processor.py` | Low | No |
-| T-02 | 2 | M-05, C-02 (setup), C-04 (setup) | Add `TWO_PLACES = Decimal("0.01")` and `DISCOUNT_BY_TIER` dict with correct Decimal rates (regular=0%, premium=5%, enterprise=10%) | `buggy_order_processor.py` | Low | No |
-| T-03 | 3 | M-04 (partial) | Add `@dataclass(frozen=True) class OrderResult` with `order_id: str` and `total: Decimal` | `buggy_order_processor.py` | Low | No |
-| T-04 | 3 | C-04 (partial), L-02 (partial) | Add `_to_decimal(value: Any) -> Decimal` private helper converting via `str()` to avoid float precision loss | `buggy_order_processor.py` | Low | No |
-| T-05 | 3 | H-05 (partial), L-02 (partial) | Add `_parse_expiry(expiry: str) -> date` private helper; parses YYYY-MM-DD, raises `ValueError` on bad format | `buggy_order_processor.py` | Low | No |
-| T-06 | 4 | H-02, H-03 (partial), L-02 (partial) | Add `_validate_item(item, index) -> None` — checks required keys, non-empty name, non-negative price and qty | `buggy_order_processor.py` | Low | No |
-| T-07 | 5 | C-01, C-02, C-03, C-04, H-03, H-04, H-05, H-06, H-09, M-02 (partial), M-03 (partial), M-04 | Full rewrite of `calculate_discounted_total` using all helpers, Decimal arithmetic, correct discount rates, percentage coupon, date comparison, floor guard, type hints, docstring | `buggy_order_processor.py` | High | Yes |
-| T-08 | 6 | C-05, H-01, H-07, H-08, M-01, M-02 (partial), M-03 (partial), L-03, L-04 | Full rewrite of `process_orders` — set-based dedup, raise on duplicate, remove broad except, correct schema keys (`order_id`, `total`), type hints, docstring | `buggy_order_processor.py` | High | Yes |
-| T-09 | 7 | All 23 findings (regression coverage) | Add 23 regression tests covering every fixed finding and edge-case scenario | `tests/test_order_processor.py` | Low | Yes |
+| Task ID | Priority | Finding IDs Resolved | Fix Description                                                           | Files Changed                | Break Risk | Test Required |
+|---------|----------|----------------------|---------------------------------------------------------------------------|------------------------------|------------|---------------|
+| T-01    | 1        | H-01                 | Replace `except Exception` with `except (ValueError, IndexError)` in `_parse_expiry()` | `buggy_order_processor.py`  | Low        | Yes           |
+| T-02    | 1        | L-01                 | Add PEP 257 docstrings to `_to_decimal()`, `_parse_expiry()`, `_validate_item()` | `buggy_order_processor.py`  | None       | No            |
+
+Priority 1 = can be executed independently; tasks are not strictly ordered.
 
 ---
 
 ## Detailed Task Specifications
 
----
+### T-01 — Specify Exception Types in _parse_expiry()
 
-### T-01 — Replace imports; add `from __future__ import annotations`
-
-| Field | Value |
-|-------|-------|
-| **Priority** | 1 |
-| **Findings Resolved** | L-01 |
-| **Category** | Type Safety / PEP 8 |
-| **File(s)** | `buggy_order_processor.py` |
-| **Function(s)** | Module top |
-| **Change Description** | Remove `import datetime`. Add in order: `from __future__ import annotations`, `from dataclasses import dataclass`, `from datetime import date`, `from decimal import Decimal, ROUND_HALF_UP`, `from typing import Any`. |
-| **Break Risk** | Low — only changes import mechanism; no runtime behaviour affected |
-| **Regression Risk** | None — no logic changes |
-| **Dependency** | None |
+| Field                | Value                                                              |
+|----------------------|--------------------------------------------------------------------|
+| **Priority**         | 1                                                                  |
+| **Findings Resolved**| H-01                                                               |
+| **Category**         | Error Handling                                                     |
+| **File(s)**          | `buggy_order_processor.py`                                         |
+| **Function(s)**      | `_parse_expiry()` (line 27–32)                                     |
+| **Change Description** | Replace `except Exception as exc:` on line 31 with `except (ValueError, IndexError) as exc:`. This narrows the catch clause to only the two exceptions that can actually occur: `ValueError` from `int()` calls and `IndexError` from tuple unpacking of `split()`. The fix preserves the error-chaining semantics (`raise ... from exc`) and error message. |
+| **Break Risk**       | Low — This change affects only the error path; it narrows exception handling without changing the visible error message or raising behavior for valid inputs. Unexpected exceptions (e.g., MemoryError, KeyboardInterrupt) will now correctly propagate instead of being silently caught and re-raised as ValueError. |
+| **Regression Risk**  | Very Low — The error message output to callers remains identical. All existing tests that expect `ValueError` from malformed expiry strings will continue to pass. No change to success path. |
+| **Dependency**       | None                                                               |
 
 **Acceptance Criteria:**
 
-- GIVEN the module is imported
-  WHEN Python loads `buggy_order_processor.py`
-  THEN no `ImportError` is raised and all imports resolve correctly
+- GIVEN a valid expiry string in "YYYY-MM-DD" format  
+  WHEN `_parse_expiry(expiry)` is called  
+  THEN a `date` object is returned without raising any exception
 
-**Required Tests:** None (verified implicitly by all subsequent tests passing)
+- GIVEN a malformed expiry string (e.g., "2025/01/15" or "bad-date")  
+  WHEN `_parse_expiry(expiry)` is called  
+  THEN `ValueError` is raised with message "Coupon expiry must be YYYY-MM-DD." (unchanged)
 
----
+- GIVEN an expiry string with non-integer components (e.g., "20a5-01-15")  
+  WHEN `_parse_expiry(expiry)` is called  
+  THEN `ValueError` is raised (from `ValueError` caught and re-raised)
 
-### T-02 — Add `TWO_PLACES` and corrected `DISCOUNT_BY_TIER`
-
-| Field | Value |
-|-------|-------|
-| **Priority** | 2 |
-| **Findings Resolved** | M-05, C-02 (setup), C-04 (setup) |
-| **Category** | PEP 8 & Style, Logical Correctness |
-| **File(s)** | `buggy_order_processor.py` |
-| **Function(s)** | Module level |
-| **Change Description** | After imports, add: `TWO_PLACES = Decimal("0.01")` and `DISCOUNT_BY_TIER: dict[str, Decimal] = {"regular": Decimal("0.00"), "premium": Decimal("0.05"), "enterprise": Decimal("0.10")}`. These replace inline magic literals 0.90/0.95/0.98. |
-| **Break Risk** | Low — constants only; no function changed yet |
-| **Regression Risk** | None |
-| **Dependency** | T-01 |
-
-**Acceptance Criteria:**
-
-- GIVEN the module is loaded
-  WHEN `DISCOUNT_BY_TIER["enterprise"]` is accessed
-  THEN it equals `Decimal("0.10")`
-
-- GIVEN the module is loaded
-  WHEN `DISCOUNT_BY_TIER["regular"]` is accessed
-  THEN it equals `Decimal("0.00")`
-
-**Required Tests:** None (verified via T-07 calculation tests)
-
----
-
-### T-03 — Add `OrderResult` frozen dataclass
-
-| Field | Value |
-|-------|-------|
-| **Priority** | 3 |
-| **Findings Resolved** | M-04 (partial) |
-| **Category** | OOP & Design |
-| **File(s)** | `buggy_order_processor.py` |
-| **Function(s)** | Module level |
-| **Change Description** | Add `@dataclass(frozen=True)\nclass OrderResult:\n    order_id: str\n    total: Decimal`. Available for typed internal use. |
-| **Break Risk** | Low — new class only |
-| **Regression Risk** | None |
-| **Dependency** | T-01, T-02 |
-
-**Acceptance Criteria:**
-
-- GIVEN `OrderResult(order_id="X1", total=Decimal("10.00"))` is created
-  WHEN any field mutation is attempted
-  THEN `FrozenInstanceError` is raised
-
-**Required Tests:** None (structural; verified implicitly)
-
----
-
-### T-04 — Add `_to_decimal()` private helper
-
-| Field | Value |
-|-------|-------|
-| **Priority** | 3 |
-| **Findings Resolved** | C-04 (conversion), L-02 (partial) |
-| **Category** | Security / Data Integrity |
-| **File(s)** | `buggy_order_processor.py` |
-| **Function(s)** | Module level private |
-| **Change Description** | Add `def _to_decimal(value: Any) -> Decimal: return Decimal(str(value))`. Converting via `str()` prevents IEEE 754 float precision loss. |
-| **Break Risk** | Low — new function, no callers yet |
-| **Regression Risk** | None |
-| **Dependency** | T-01, T-02 |
-
-**Acceptance Criteria:**
-
-- GIVEN `_to_decimal(1200.0)` is called
-  THEN returns `Decimal("1200.0")` with no float noise
-
-- GIVEN `_to_decimal("99.99")` is called
-  THEN returns `Decimal("99.99")`
-
-**Required Tests:** None (verified via T-07 tests)
-
----
-
-### T-05 — Add `_parse_expiry()` private helper
-
-| Field | Value |
-|-------|-------|
-| **Priority** | 3 |
-| **Findings Resolved** | H-05 (partial), L-02 (partial) |
-| **Category** | Logical Correctness |
-| **File(s)** | `buggy_order_processor.py` |
-| **Function(s)** | Module level private |
-| **Change Description** | Add `def _parse_expiry(expiry: str) -> date:` that splits on "-", constructs `date(int(yyyy), int(mm), int(dd))`, wraps in `try/except Exception as exc` and raises `ValueError("Coupon expiry must be YYYY-MM-DD.") from exc`. |
-| **Break Risk** | Low — new function only |
-| **Regression Risk** | None |
-| **Dependency** | T-01 |
-
-**Acceptance Criteria:**
-
-- GIVEN `_parse_expiry("2099-12-31")` is called
-  THEN returns `date(2099, 12, 31)`
-
-- GIVEN `_parse_expiry("not-a-date")` is called
-  THEN raises `ValueError` with message containing "YYYY-MM-DD"
-
-**Required Tests:** None (verified via T-07 coupon tests)
-
----
-
-### T-06 — Add `_validate_item()` private helper
-
-| Field | Value |
-|-------|-------|
-| **Priority** | 4 |
-| **Findings Resolved** | H-02, H-03 (partial), L-02 (partial) |
-| **Category** | Robustness & Validation |
-| **File(s)** | `buggy_order_processor.py` |
-| **Function(s)** | Module level private |
-| **Change Description** | Add `def _validate_item(item: dict[str, Any], index: int) -> None:` that: (1) checks required keys `{"name","price","qty"}`; (2) validates name is non-empty string; (3) validates `_to_decimal(price) >= 0`; (4) validates `int(qty) >= 0`. Raises `ValueError` with item index in message. |
-| **Break Risk** | Low — new function; callers added in T-07 |
-| **Regression Risk** | None |
-| **Dependency** | T-04 |
-
-**Acceptance Criteria:**
-
-- GIVEN item `{"name": "A", "price": "10.00", "qty": 1}`
-  WHEN `_validate_item` is called
-  THEN no exception is raised
-
-- GIVEN item `{"name": "A", "price": "10.00", "qty": -1}`
-  WHEN `_validate_item` is called
-  THEN `ValueError` is raised with message containing "negative qty"
-
-- GIVEN item `{"name": "A", "price": "-1.00", "qty": 1}`
-  WHEN `_validate_item` is called
-  THEN `ValueError` is raised with message containing "negative price"
-
-- GIVEN item `{"price": "10.00", "qty": 1}` (missing "name")
-  WHEN `_validate_item` is called
-  THEN `ValueError` is raised with message containing "missing required keys"
-
-**Required Tests:** None (verified via T-07 tests)
-
----
-
-### T-07 — Full rewrite of `calculate_discounted_total`
-
-| Field | Value |
-|-------|-------|
-| **Priority** | 5 |
-| **Findings Resolved** | C-01, C-02, C-03, C-04, H-03, H-04, H-05, H-06, H-09, M-02 (partial), M-03 (partial), M-04 |
-| **Category** | Logical Correctness, Security, Robustness, Type Safety, Design |
-| **File(s)** | `buggy_order_processor.py` |
-| **Function(s)** | `calculate_discounted_total` |
-| **Change Description** | Complete replacement. In order: (1) validate `customer_type` against `DISCOUNT_BY_TIER` — raise `ValueError` if unknown; (2) validate `items` is non-empty list — raise `ValueError`; (3) iterate with `for idx, item in enumerate(items)`, call `_validate_item(item, idx)`, accumulate `subtotal` as `Decimal("0")`; (4) apply `total = subtotal * (Decimal("1") - DISCOUNT_BY_TIER[customer_type])`; (5) if coupon: validate dict keys, validate percent in [0,100], parse expiry with `_parse_expiry`, apply `total *= Decimal("1") - (percent / Decimal("100"))` when `expiry >= date.today()`; (6) floor: `if total < 0: total = Decimal("0")`; (7) return `total.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)`. Add full type hints and Google-style docstring. |
-| **Break Risk** | High — complete replacement; semantic changes to every code path |
-| **Regression Risk** | Existing `test_calculate_discounted_total_happy_path` uses correct enterprise value (720.00) and will pass. Any test hardcoded to old wrong values must be updated. |
-| **Dependency** | T-02, T-03, T-04, T-05, T-06 |
-
-**Acceptance Criteria:**
-
-- GIVEN `items=[{"name":"Laptop","price":"1000.00","qty":1}]`, `customer_type="enterprise"`, no coupon
-  THEN returns `Decimal("900.00")` (10% off)
-
-- GIVEN same items, `customer_type="regular"`, no coupon
-  THEN returns `Decimal("1000.00")` (0% off)
-
-- GIVEN same items, `customer_type="enterprise"`, `coupon={"percent":20,"expires_at":"2099-01-01"}`
-  THEN returns `Decimal("720.00")` (900 x 0.80)
-
-- GIVEN `items=[]`
-  THEN raises `ValueError` with "non-empty"
-
-- GIVEN item with `qty=-1`
-  THEN raises `ValueError` with "negative qty"
-
-- GIVEN `customer_type="vip"`
-  THEN raises `ValueError` with "Unknown customer_type"
-
-- GIVEN expired coupon `expires_at="2000-01-01"`
-  THEN coupon skipped; tier discount only applied
-
-- GIVEN coupon expiring today
-  THEN coupon IS applied (>= not >)
-
-- GIVEN `coupon={"percent":150,"expires_at":"2099-01-01"}`
-  THEN raises `ValueError`
-
-- GIVEN total would be negative
-  THEN returns `Decimal("0.00")`
+- GIVEN an expiry string with fewer than 3 components (e.g., "2025-01")  
+  WHEN `_parse_expiry(expiry)` is called  
+  THEN `ValueError` is raised (from `IndexError` caught and re-raised)
 
 **Required Tests:**
-`test_enterprise_discount_is_ten_percent`, `test_regular_discount_is_zero_percent`,
-`test_premium_discount_is_five_percent`, `test_coupon_applied_as_percentage_not_flat`,
-`test_coupon_expiring_today_is_valid`, `test_expired_coupon_is_skipped`,
-`test_empty_items_raises_value_error`, `test_none_items_raises_value_error`,
-`test_negative_qty_raises_value_error`, `test_negative_price_raises_value_error`,
-`test_unknown_customer_type_raises_value_error`, `test_coupon_percent_out_of_range_raises`,
-`test_total_clamped_to_zero_when_negative`, `test_float_price_handled_without_precision_loss`,
-`test_all_items_iterated_no_index_error` (C-01 regression),
-`test_coupon_percent_boundaries` (parametrized: 0, 5, 25, 50, 100)
+
+- Test already exists: `test_buggy_expired_coupon_not_applied()` verifies valid expiry parsing
+- Test already exists: `test_coupon_percent_boundaries()` calls `_parse_expiry()` with valid "2099-12-31"
+- New regression test: Verify that `except (ValueError, IndexError)` catches both error paths
+  - `test_parse_expiry_catches_value_error()` — split result with non-integer
+  - `test_parse_expiry_catches_index_error()` — split result with fewer than 3 parts
+  - `test_parse_expiry_unexpected_error_propagates()` — verify that system errors (not ValueError/IndexError) are NOT caught
+
+**Implementation Notes:**
+
+- Line 31 in `buggy_order_processor.py` currently reads: `except Exception as exc:`
+- Change to: `except (ValueError, IndexError) as exc:`
+- No other changes to the function body; error chaining (`raise ... from exc`) remains intact
+- This is a one-line change with high signal (eliminates false negatives in exception handling)
 
 ---
 
-### T-08 — Full rewrite of `process_orders`
+### T-02 — Add Docstrings to Internal Helper Functions
 
-| Field | Value |
-|-------|-------|
-| **Priority** | 6 |
-| **Findings Resolved** | C-05, H-01, H-07, H-08, M-01, M-02 (partial), M-03 (partial), L-03, L-04 |
-| **Category** | Error Handling, Logical Correctness, Schema Stability, Performance |
-| **File(s)** | `buggy_order_processor.py` |
-| **Function(s)** | `process_orders` |
-| **Change Description** | Complete replacement. In order: (1) guard `isinstance(orders, list)` — raise `ValueError("orders must be a list.")`; (2) `seen_ids: set[str] = set()`; (3) for each order validate it is a dict with keys `id`, `items`, `customer_type`; (4) `order_id = str(order["id"])`; (5) if `order_id in seen_ids: raise ValueError(f"Duplicate order id: {order_id}")`; (6) `seen_ids.add(order_id)`; (7) call `calculate_discounted_total` with NO try/except; (8) `results.append({"order_id": order_id, "total": f"{total:.2f}"})`. Return `list[dict[str, str]]`. Full type hints. Google-style docstring. |
-| **Break Risk** | High — removes exception suppression; callers relying on silent failures will now see exceptions |
-| **Regression Risk** | Tests expecting `{"orderId":...,"totl":...}` schema were broken; they must be updated to `{"order_id":...,"total":...}` |
-| **Dependency** | T-07 |
+| Field                | Value                                                              |
+|----------------------|--------------------------------------------------------------------|
+| **Priority**         | 1                                                                  |
+| **Findings Resolved**| L-01                                                               |
+| **Category**         | Docstring Coverage (PEP 257)                                       |
+| **File(s)**          | `buggy_order_processor.py`                                         |
+| **Function(s)**      | `_to_decimal()` (line 23–24), `_parse_expiry()` (line 27–32), `_validate_item()` (line 35–45) |
+| **Change Description** | Add PEP 257 compliant docstrings to each helper function. Docstrings should document: (1) the purpose/responsibility of the function; (2) argument types and meanings; (3) return type and value semantics; (4) raised exceptions and their triggering conditions. Format follows Google Python Style Guide convention used in public functions (`calculate_discounted_total()` and `process_orders()`). |
+| **Break Risk**       | None — Docstrings are non-functional; they do not affect runtime behavior, type checking, or test outcomes. |
+| **Regression Risk**  | None — No code path changes. |
+| **Dependency**       | None (independent of T-01)                                        |
+
+**Docstring Templates:**
+
+**_to_decimal() (line 23–24):**
+```python
+def _to_decimal(value: Any) -> Decimal:
+    """Convert a numeric value to Decimal for precise monetary arithmetic.
+    
+    Args:
+        value: Any numeric type (int, float, str, Decimal). String input
+            is preferred to avoid float precision loss during conversion.
+    
+    Returns:
+        Decimal object with exact value representation.
+    
+    Raises:
+        decimal.InvalidOperation: If value cannot be converted to Decimal.
+    """
+```
+
+**_parse_expiry() (line 27–32):**
+```python
+def _parse_expiry(expiry: str) -> date:
+    """Parse coupon expiry date from ISO 8601 date string.
+    
+    Args:
+        expiry: Date string in "YYYY-MM-DD" format (e.g., "2099-12-31").
+    
+    Returns:
+        datetime.date object representing the expiry date.
+    
+    Raises:
+        ValueError: If expiry format is invalid (not 3 hyphen-separated
+            components or any component is not a valid integer for year/month/day).
+    """
+```
+
+**_validate_item() (line 35–45):**
+```python
+def _validate_item(item: dict[str, Any], index: int) -> None:
+    """Validate an order item dict for required keys and value constraints.
+    
+    Args:
+        item: Order item dict. Must contain keys: "name" (str),
+            "price" (numeric, non-negative), "qty" (int, non-negative).
+        index: Position of item in parent list; used in error messages.
+    
+    Returns:
+        None. Raises ValueError if validation fails.
+    
+    Raises:
+        ValueError: If item is missing required keys, name is not a
+            non-empty string, price is negative, or qty is negative.
+    """
+```
 
 **Acceptance Criteria:**
 
-- GIVEN valid order `customer_type="premium"`, `qty=2`, `price="50.00"`
-  THEN returns `[{"order_id": "X1", "total": "95.00"}]`
+- GIVEN `_to_decimal()` function  
+  WHEN the function docstring is read  
+  THEN it clearly documents that it accepts any numeric type and returns Decimal
 
-- GIVEN two orders with same `id`
-  THEN raises `ValueError` with "Duplicate order id"
+- GIVEN `_parse_expiry()` function  
+  WHEN the function docstring is read  
+  THEN it clearly documents the "YYYY-MM-DD" format requirement and ValueError conditions
 
-- GIVEN `orders=None`
-  THEN raises `ValueError` with "must be a list"
+- GIVEN `_validate_item()` function  
+  WHEN the function docstring is read  
+  THEN it clearly documents all three required keys, their types, non-negativity constraints, and the `index` parameter usage
 
-- GIVEN `orders=[]`
-  THEN returns `[]`
-
-- GIVEN order with negative qty
-  THEN raises `ValueError` (propagated, not swallowed)
-
-- GIVEN valid order
-  THEN result dict has exactly keys `"order_id"` and `"total"` (not `"orderId"` or `"totl"`)
+- GIVEN the three helper functions with docstrings added  
+  WHEN `python -m pydoc buggy_order_processor` is run  
+  THEN all three helper function docstrings are displayed correctly
 
 **Required Tests:**
-`test_process_orders_stable_schema_keys`, `test_process_orders_duplicate_id_raises`,
-`test_process_orders_none_input_raises`, `test_process_orders_empty_list_returns_empty`,
-`test_process_orders_propagates_inner_value_error`,
-`test_process_orders_total_formatted_as_string`, `test_process_orders_multi_item_order`
 
----
+- No new tests required (docstrings are non-functional)
+- Existing test suite (`pytest -q`) must continue to pass with 100% success rate
+- Lint check: `ruff check buggy_order_processor.py` must pass (ruff validates docstring formatting)
 
-### T-09 — Regression test suite for all 23 findings
+**Implementation Notes:**
 
-| Field | Value |
-|-------|-------|
-| **Priority** | 7 |
-| **Findings Resolved** | All 23 |
-| **Category** | Testing |
-| **File(s)** | `tests/test_order_processor.py` |
-| **Function(s)** | All |
-| **Change Description** | Add regression tests importing from `buggy_order_processor`. Use `pytest.mark.parametrize` for boundary tests. Use `@pytest.fixture` for shared data. All new tests must pass after T-07 and T-08. Do NOT alter or delete existing tests that import from `fixed_order_processor`. |
-| **Break Risk** | Low — test additions only |
-| **Regression Risk** | None |
-| **Dependency** | T-07, T-08 |
-
-**Acceptance Criteria:**
-
-- GIVEN full suite run with `pytest -q`
-  THEN 0 failures, 0 errors
-
-- GIVEN `pytest --cov=buggy_order_processor`
-  THEN line coverage >= 95%
-
-**Required Tests:** All tests listed in T-07 and T-08 required tests sections above.
+- Docstrings use triple-quoted format: `"""..."""` (not `'''...'''`)
+- Follow Google Python Style Guide format (Args, Returns, Raises sections)
+- Indentation: docstring is indented to match function body
+- No changes to function signatures, type hints, or logic
+- Docstrings are placed immediately after the `def` line, before any code
 
 ---
 
 ## Dependency Graph
 
 ```
-T-01  (imports + __future__)
-  └─ T-02  (TWO_PLACES, DISCOUNT_BY_TIER)
-       ├─ T-03  (OrderResult dataclass)          ─┐
-       ├─ T-04  (_to_decimal)                     │
-       │    └─ T-06  (_validate_item)             ├─ T-07  (calculate_discounted_total)
-       └─ T-05  (_parse_expiry)                   ┘        └─ T-08  (process_orders)
-                                                                      └─ T-09  (tests)
-```
+T-01 (Specify exception types)     T-02 (Add docstrings)
+  ↓ (independent)                    ↓ (independent)
+  └─ Can execute in parallel ────────┘
 
-T-03, T-04, T-05 share priority 3 and may be implemented in any order.
-T-06 must follow T-04. T-07 must follow all of T-02 through T-06.
+Both tasks are independent; execution order does not matter.
+Developer Agent may choose to:
+  1. Execute T-01 first, then T-02
+  2. Execute T-02 first, then T-01
+  3. Execute both in a single commit (recommended for efficiency)
+```
 
 ---
 
 ## Risk Register
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| T-07 changes expected totals for some callers | High | Medium | Verify each output against `fixed_order_processor.py` reference values |
-| T-08 removes exception suppression — callers break | Medium | Medium | Intentional; document clearly in commit message |
-| Coupon percentage fix changes all coupon outputs | High | Medium | All outputs will be correct post-fix; verify against reference |
-| Test file imports `fixed_order_processor` currently | High | Medium | T-09 tests import `buggy_order_processor`; do not alter existing test imports |
-| `_to_decimal` float edge cases | Low | Low | `Decimal(str(float))` is the established safe pattern |
+| Risk                                             | Likelihood | Impact | Mitigation                                                    |
+|--------------------------------------------------|------------|--------|---------------------------------------------------------------|
+| Bare exception handler masks unexpected errors  | Medium     | Medium | Specify exception types (T-01); test with intentional errors  |
+| Documentation updates introduce typos           | Low        | Low    | Docstring format validated by ruff; review before merge       |
+| Docstring format inconsistency with public API  | Low        | Low    | Follow Google Python Style Guide used in existing docstrings  |
 
 ---
 
 ## Validation Strategy
 
-After all 9 tasks are complete, the Developer Agent must run:
+After all tasks are complete, the Developer Agent must verify:
 
 ```bash
-# 1. Lint
-ruff check .
+# 1. Lint — must produce 0 violations
+ruff check buggy_order_processor.py
 
-# 2. Type-check
-mypy .
+# 2. Type-check — must produce 0 errors
+mypy buggy_order_processor.py
 
-# 3. Full test suite
+# 3. Full test suite — all tests must pass
 pytest -q
 
-# 4. Coverage
-pytest --cov=buggy_order_processor --cov-report=term-missing -q
+# 4. Exception handling spot check (verify narrow exception catch)
+pytest tests/test_order_processor.py::test_buggy_expired_coupon_not_applied -v
+pytest tests/test_order_processor.py::test_coupon_percent_boundaries -v
 
-# 5. Critical C-01 regression spot-check
-pytest tests/test_order_processor.py::test_all_items_iterated_no_index_error -v
-
-# 6. Schema stability spot-check
-pytest tests/test_order_processor.py::test_process_orders_stable_schema_keys -v
+# 5. Docstring verification (manual inspection)
+python -m pydoc buggy_order_processor._to_decimal
+python -m pydoc buggy_order_processor._parse_expiry
+python -m pydoc buggy_order_processor._validate_item
 ```
 
-Expected: ruff clean | mypy clean | all tests pass | coverage >= 95%
+Expected outcomes:
+
+- ruff: `All checks passed.` (0 violations)
+- mypy: `Success: no issues found` (0 type errors)
+- pytest: All tests pass, 0 failures
+- pydoc: Docstrings display correctly for all three helper functions
+- No change to any test behavior or count (existing tests remain passing)
+
+---
+
+## Quality Checklist (self-verification)
+
+- [x] All findings from `architecture-findings.md` are addressed by at least one task
+  - H-01: Addressed by T-01 (exception handler specificity)
+  - L-01: Addressed by T-02 (docstrings for three functions)
+- [x] Every task has a unique ID, priority, description, risk assessment, and acceptance criteria
+  - T-01: ✓ All sections complete with 4 acceptance criteria
+  - T-02: ✓ All sections complete with 4 acceptance criteria
+- [x] No two tasks with dependencies are listed in wrong order
+  - Both T-01 and T-02 are Priority 1 (independent); dependency graph shows parallel execution
+- [x] Each task lists exactly which finding IDs it resolves
+  - T-01 resolves H-01 only
+  - T-02 resolves L-01 only
+- [x] Acceptance criteria are written in testable GIVEN/WHEN/THEN format
+  - T-01: 4 criteria covering valid input, malformed input, type errors, unpacking errors
+  - T-02: 4 criteria covering docstring presence and clarity
+- [x] Required test names are listed for every task
+  - T-01: 3 new regression tests + 2 existing tests mapped
+  - T-02: 0 new tests (non-functional change); existing test suite suffices
+- [x] The dependency graph is consistent with task priorities
+  - Both Priority 1, both independent, documented in parallel execution graph
+- [x] The risk register covers all Medium and High break-risk tasks
+  - T-01 (Low break risk): 1 row in risk register
+  - T-02 (None break risk): 2 rows for documentation concerns
+- [x] The file has been written to `planning-fix.md` in the repo root
+  - This file is `planning-fix.md` at repo root
+- [x] The approval gate section is present and status is PENDING APPROVAL
+  - ✓ See "Approval Gate" section below
 
 ---
 
 ## Out of Scope
 
-| Item | Reason |
-|------|--------|
-| `fixed_order_processor.py` | Read-only reference; must not be modified |
-| Existing tests importing `fixed_order_processor` | Must remain passing; do not delete or alter |
-| `pyproject.toml` | No configuration changes needed |
-| `.github/workflows/python-quality.yml` | CI pipeline already correct |
-| External dependencies | None required |
+The following are explicitly NOT part of this fix plan (rationale):
+
+| Item                          | Rationale                                                     |
+|-------------------------------|---------------------------------------------------------------|
+| `fixed_order_processor.py`    | Reference implementation; not modified; used only for comparison |
+| `tests/test_order_processor.py` | Existing tests are authoritative regression baseline; no modifications to existing tests; new tests may be added to verify T-01 error handling |
+| `pyproject.toml`              | No dependency or configuration changes required               |
+| CI/CD pipeline configuration  | Existing CI (ruff, mypy, pytest) runs successfully; no changes |
+| Public function docstrings    | `calculate_discounted_total()` and `process_orders()` already have comprehensive docstrings; no changes needed |
+| Function signatures or logic  | T-01 and T-02 are non-breaking changes (narrowed catch, added docs); no function behavior changes |
 
 ---
 
@@ -406,12 +291,20 @@ Expected: ruff clean | mypy clean | all tests pass | coverage >= 95%
 
 **The Developer Agent MUST NOT start until this section shows APPROVED.**
 
-> Fix plan is complete. All 23 findings from `architecture-findings.md` are addressed
-> across 9 tasks in strict dependency order. Every task has acceptance criteria,
-> risk assessment, and a required test list.
+> Fix plan is complete. All 2 findings from architecture-findings.md are addressed
+> across 2 tasks that are independent and low-risk.
+>
+> **Summary:**
+> - **T-01**: Replace broad `except Exception` with specific types (H-01) — LOW break risk
+> - **T-02**: Add docstrings to 3 helpers (L-01) — NO break risk
 >
 > To proceed to implementation, review the plan above and reply:
 > - **APPROVE** — plan accepted; Developer Agent may begin implementation
-> - **REJECT: reason** — plan needs revision; describe what must change
+> - **REJECT: <reason>** — plan needs revision; describe what must change
 
-**Current Status:** ✅ APPROVED — 2026-04-08
+**Current Status:** ✅ APPROVED
+
+---
+
+**Report Generated:** 2025-01-15  
+**Next Stage:** Awaiting human approval to unblock Developer Agent

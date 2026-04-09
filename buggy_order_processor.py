@@ -21,18 +21,56 @@ class OrderResult:
 
 
 def _to_decimal(value: Any) -> Decimal:
+    """Convert a numeric value to Decimal for precise monetary arithmetic.
+
+    Args:
+        value: Any numeric type (int, float, str, Decimal). String input
+            is preferred to avoid float precision loss during conversion.
+
+    Returns:
+        Decimal object with exact value representation.
+
+    Raises:
+        decimal.InvalidOperation: If value cannot be converted to Decimal.
+    """
     return Decimal(str(value))
 
 
 def _parse_expiry(expiry: str) -> date:
+    """Parse coupon expiry date from ISO 8601 date string.
+
+    Args:
+        expiry: Date string in "YYYY-MM-DD" format (e.g., "2099-12-31").
+
+    Returns:
+        datetime.date object representing the expiry date.
+
+    Raises:
+        ValueError: If expiry format is invalid (not 3 hyphen-separated
+            components or any component is not a valid integer for year/month/day).
+    """
     try:
         yyyy, mm, dd = expiry.split("-")
         return date(int(yyyy), int(mm), int(dd))
-    except Exception as exc:
+    except (ValueError, IndexError) as exc:
         raise ValueError("Coupon expiry must be YYYY-MM-DD.") from exc
 
 
 def _validate_item(item: dict[str, Any], index: int) -> None:
+    """Validate an order item dict for required keys and value constraints.
+
+    Args:
+        item: Order item dict. Must contain keys: "name" (str),
+            "price" (numeric, non-negative), "qty" (int, non-negative).
+        index: Position of item in parent list; used in error messages.
+
+    Returns:
+        None. Raises ValueError if validation fails.
+
+    Raises:
+        ValueError: If item is missing required keys, name is not a
+            non-empty string, price is negative, or qty is negative.
+    """
     required = {"name", "price", "qty"}
     missing = required - set(item.keys())
     if missing:
